@@ -91,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderResults(stocks) {
+        resultsGrid.innerHTML = '';
         if (!stocks || stocks.length === 0) {
             resultsGrid.innerHTML = `<div class="empty-state">目前沒有股票完全符合 8/8 門檻與 RS Rating > 70 的嚴苛標準。</div>`;
             return;
