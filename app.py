@@ -1,6 +1,6 @@
 import yfinance as yf
 import pandas as pd
-from fastapi import FastAPI
+from fastapi import FastAPI, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -8,8 +8,12 @@ from concurrent.futures import ThreadPoolExecutor
 import os
 import math
 import requests
+import uuid
 
 app = FastAPI(title="Mark Minervini Screener")
+
+# 全域字典儲存背景任務進度
+tasks_store = {}
 
 # 確保 static 資料夾存在
 os.makedirs("static", exist_ok=True)
@@ -149,40 +153,62 @@ def evaluate_stock(ticker, spy_return, min_volume, min_market_cap, is_mag7=False
     except Exception as e:
         return None
 
-@app.post("/api/screen")
-def run_screener(criteria: FilterCriteria):
-    """執行過濾邏輯的端點"""
-    
-    is_mag7 = (criteria.target_list == "mag7")
-    if is_mag7:
-        tickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "NVDA"]
-    else:
-        tickers = get_sp500_tickers()
-    
-    # 爬取 SPY として基準
-    spy = yf.Ticker("SPY").history(period="2y")
-    if spy.empty or len(spy) < 252:
-        spy_1y_return = 0.1 # Fallback
-    else:
-        spy_1y_return = (spy['Close'].iloc[-1] / spy['Close'].iloc[-252]) - 1
-
-    passed_stocks = []
-    
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        results = executor.map(
-            lambda t: evaluate_stock(t, spy_1y_return, criteria.min_volume, criteria.min_market_cap, is_mag7), 
-            tickers
-        )
+def process_screener(task_id: str, criteria: FilterCriteria):
+    """真正在背景幫老闆跑腿的過濾長工"""
+    try:
+        tasks_store[task_id] = {"status": "running", "progress": 0, "total": 0, "results": [], "benchmark": 0}
         
-    for res in results:
-        if res:
-            passed_stocks.append(res)
+        is_mag7 = (criteria.target_list == "mag7")
+        if is_mag7:
+            tickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "NVDA"]
+        else:
+            tickers = get_sp500_tickers()
             
-    # 按強弱排序：先比分數高低 (得分高在前)，再比一年期報酬率做為平手指標
-    passed_stocks = sorted(passed_stocks, key=lambda x: (x.get('score', 0), x['return_1y']), reverse=True)
+        tasks_store[task_id]["total"] = len(tickers)
+        
+        # 爬取 SPY として基準
+        spy = yf.Ticker("SPY").history(period="2y")
+        if spy.empty or len(spy) < 252:
+            spy_1y_return = 0.1 # Fallback
+        else:
+            spy_1y_return = (spy['Close'].iloc[-1] / spy['Close'].iloc[-252]) - 1
             
-    return {
-        "passed": passed_stocks, 
-        "benchmark_return": round(float(spy_1y_return) * 100, 2), 
-        "total_scanned": len(tickers)
-    }
+        tasks_store[task_id]["benchmark"] = round(float(spy_1y_return) * 100, 2)
+
+        passed_stocks = []
+        
+        # 建立進度追蹤包裝器
+        def _eval_with_progress(t):
+            res = evaluate_stock(t, spy_1y_return, criteria.min_volume, criteria.min_market_cap, is_mag7)
+            tasks_store[task_id]["progress"] += 1
+            return res
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            # 將包裝器而不是直接把 evaluate_stock 丟進去
+            results = list(executor.map(_eval_with_progress, tickers))
+            
+        for res in results:
+            if res:
+                passed_stocks.append(res)
+                
+        # 按強弱排序：得分高在前，再比一年期報酬率
+        tasks_store[task_id]["results"] = sorted(passed_stocks, key=lambda x: (x.get('score', 0), x['return_1y']), reverse=True)
+        tasks_store[task_id]["status"] = "completed"
+        
+    except Exception as e:
+        tasks_store[task_id]["status"] = "error"
+        tasks_store[task_id]["detail"] = str(e)
+
+@app.post("/api/screen/start")
+def start_screener(criteria: FilterCriteria, background_tasks: BackgroundTasks):
+    """前端敲門的櫃台：發放號碼牌並交代後台去跑"""
+    task_id = str(uuid.uuid4())
+    background_tasks.add_task(process_screener, task_id, criteria)
+    return {"task_id": task_id}
+    
+@app.get("/api/screen/status/{task_id}")
+def get_task_status(task_id: str):
+    """前端無時無刻來確認進度的廣播台"""
+    if task_id not in tasks_store:
+        return {"status": "error", "detail": "找不到該任務編號！"}
+    return tasks_store[task_id]
