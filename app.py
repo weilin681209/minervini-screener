@@ -9,6 +9,8 @@ import os
 import math
 import requests
 import uuid
+import io
+import traceback
 
 app = FastAPI(title="Mark Minervini Screener")
 
@@ -72,12 +74,64 @@ def check_vcp(df):
     return True
 
 def get_sp500_tickers():
-    """從維基百科取得 S&P 500 最新成份股"""
-    url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-    html = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}).text
-    tables = pd.read_html(html)
-    df = tables[0]
-    return [t.replace('.', '-') for t in df['Symbol'].tolist()]
+    """優先從 GitHub 動態抓取最新 S&P 500 名單 (解決雲端抓取 Wikipedia 的 IP 封鎖問題)"""
+    try:
+        # 嘗試從穩定且較少封鎖機房 IP 的 GitHub 原始數據庫抓取最新 CSV
+        csv_url = "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/master/data/constituents.csv"
+        response = requests.get(csv_url, timeout=10)
+        df = pd.read_csv(io.StringIO(response.text))
+        if not df.empty and 'Symbol' in df.columns:
+            return [str(s).replace('.', '-') for s in df['Symbol'].tolist()]
+            
+    except Exception as e:
+        print(f"GitHub 名單抓取失敗，改用 Wiki 備援案: {e}")
+        try:
+            wiki_url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
+            html = requests.get(wiki_url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'}).text
+            tables = pd.read_html(io.StringIO(html))
+            df_wiki = tables[0]
+            if not df_wiki.empty and 'Symbol' in df_wiki.columns:
+                return [str(s).replace('.', '-') for s in df_wiki['Symbol'].tolist()]
+        except Exception as e2:
+            print(f"所有動態抓取均失敗，使用內建安全備分名單: {e2}")
+
+    # 【安全底線】如果 GitHub 和 Wikipedia 全都抓不到，最後才會使用這份內建的安全快照
+    return [
+        "AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "NVDA", "BRK-B", "UNH", "V", "JPM", "JNJ", "MA", "AVGO", "HD", "PG", "XOM", "LLY", "CVX", "ASML", 
+        "PEP", "ABBV", "KO", "MRK", "PFE", "COST", "TMO", "AVGO", "ORCL", "AZN", "CSCO", "ABT", "NKE", "DHR", "ACN", "CMCSA", "LIN", "MCD", "ADBE", "TXN",
+        "UPS", "NEE", "PM", "MS", "VZ", "RTX", "BMY", "HON", "AMGN", "LOW", "COP", "IBM", "DE", "UNP", "CAT", "LMT", "GE", "INTC", "GS", "QCOM", "PLD", 
+        "SBUX", "ELV", "T", "SPGI", "BLK", "NOW", "AXP", "INTU", "ADP", "SYK", "AMT", "ISRG", "MDLZ", "TJX", "MDLZ", "C", "AMAT", "EL", "GILD", "CB", "ADI",
+        "LRCX", "VLO", "CI", "MO", "PGR", "HCA", "REGN", "ZTS", "MMC", "CVS", "EW", "FISV", "BDX", "BSX", "HUM", "DUK", "SO", "EOG", "CSX", "EQIX", "WM",
+        "ECL", "ITW", "USB", "TGT", "ICE", "PNC", "CL", "NSC", "GD", "MMM", "BDX", "AON", "MET", "SHW", "WM", "ORLY", "SLB", "MCK", "MAR", "EMR", "APD",
+        "PSA", "MCO", "FDX", "NOC", "PSX", "ADM", "AIG", "HUM", "PH", "D", "KMB", "JCI", "MSI", "TRV", "CTAS", "MET", "MNST", "VRSK", "SRE", "CNC", "ADSK",
+        "ROP", "O", "EXC", "EIX", "BKR", "WELL", "PAYX", "TEL", "DLR", "STZ", "AEP", "KHC", "MCHP", "IDXX", "AFL", "IQV", "FIS", "CMG", "WMB", "HCA", "CDNS",
+        "PCAR", "DXCM", "SNPS", "EA", "NEM", "SPG", "KMI", "WFC", "WMT", "WBA", "WBD", "WAT", "WEC", "WFC", "WELL", "WST", "WDC", "WU", "WRK", "WY", "WYNN",
+        "XEL", "XYL", "YUM", "ZBRA", "ZBH", "ZION", "ZTS", "MMM", "AOS", "ABT", "ABBV", "ACN", "ADBE", "AMD", "AES", "AFL", "A", "APD", "AKAM", "ALK", "ALB",
+        "ARE", "ALGN", "ALLE", "LNT", "ALL", "GOOGL", "GOOG", "MO", "AMZN", "AEE", "AAL", "AEP", "AXP", "AIG", "AMT", "AWK", "AMP", "AMGN", "APH", "ADI",
+        "ANSS", "AAPL", "AMAT", "APTV", "ACGL", "ADM", "ANET", "AJG", "AIZ", "T", "ATO", "ADSK", "ADP", "AZO", "AVB", "AVY", "AXON", "BKR", "BALL", "BAC",
+        "BBWI", "BAX", "BDX", "BRK-B", "BBY", "BIO", "TECH", "BIIB", "BLK", "BX", "BA", "BKNG", "BWA", "BXP", "BSX", "BMY", "AVGO", "BR", "BF-B", "CHRW",
+        "COG", "CDNS", "CZR", "CPB", "COF", "CAH", "KMX", "CCL", "CARR", "CTLT", "CAT", "CBOE", "CBRE", "CDW", "CE", "CNC", "CNP", "CDAY", "CF", "CRL",
+        "SCHW", "CHTR", "CVX", "CMG", "CB", "CHD", "CI", "CINF", "CTAS", "CSCO", "C", "CFG", "CLX", "CME", "CMS", "KO", "CTSH", "CL", "CMCSA", "CMA",
+        "CAG", "COP", "ED", "STZ", "CEG", "COO", "CPRT", "GLW", "CTVA", "CSGP", "COST", "CTRA", "CCI", "CSX", "CMI", "CVS", "DHI", "DTE", "DIY", "DPZ",
+        "DOV", "DOW", "DVN", "DXCM", "DUK", "DVA", "EA", "ELV", "EMN", "ETN", "EBAY", "ECL", "EIX", "EW", "EMR", "ENPH", "ETR", "EOG", "EPY", "EQT",
+        "EFX", "EQIX", "EQR", "ESS", "EL", "ETSY", "EVRG", "ES", "EXC", "EXPE", "EXPD", "EXR", "XOM", "FFIV", "FDS", "FAST", "FRT", "FDX", "FITB",
+        "FE", "FIS", "FISV", "FLT", "FMC", "F", "FTNT", "FTV", "FOXA", "FOX", "BEN", "FCX", "GPS", "GRMN", "IT", "GEHC", "GEN", "GNRC", "GD", "GE",
+        "GIS", "GM", "GPC", "GILD", "GL", "GPN", "GS", "HAL", "HBI", "HIG", "HAS", "HCA", "PEAK", "HSIC", "HSY", "HSY", "HES", "HPE", "HLT", "HOLX",
+        "HD", "HON", "HRL", "HST", "HWM", "HPQ", "HUM", "HBAN", "HII", "IBM", "IEX", "IDXX", "ITW", "ILMN", "INCY", "IR", "PODD", "INTC", "ICE",
+        "IP", "IPG", "IFF", "INTU", "ISRG", "IVZ", "IPGP", "IQV", "IRM", "JBHT", "J", "JNJ", "JCI", "JPM", "JNPR", "K", "KEY", "KEYS", "KMB", "KIM",
+        "KMI", "KLAC", "KHC", "KR", "LHX", "LH", "LRCX", "LW", "LVS", "LEG", "LEN", "LLY", "LNC", "LIN", "LYV", "LKQ", "LMT", "L", "LOW", "LYB",
+        "MTB", "MRO", "MPC", "MKTX", "MAR", "MMC", "MLM", "MAS", "MA", "MTCH", "MKC", "MCD", "MCK", "MDT", "MRK", "MET", "MTD", "MGM", "MCHP", "MU",
+        "MSFT", "MAA", "MRNA", "MHK", "TAP", "MDLZ", "MPWR", "MNST", "MCO", "MS", "MOS", "MSI", "MSCI", "NDAQ", "NTAP", "NFLX", "NWL", "NEM", "NWSA",
+        "NWS", "NEE", "NKE", "NI", "NOC", "NCLH", "NRG", "NUE", "NVDA", "NVR", "NXPI", "ORLY", "OXY", "ODFL", "OMC", "ON", "OKE", "ORCL", "OGN",
+        "OTIS", "PCAR", "PKG", "PH", "PAYX", "PAYC", "PYPL", "PNR", "PEP", "PKI", "PFE", "PM", "PSX", "PNW", "PNC", "POOL", "PPG", "PPL", "PFG",
+        "PG", "PGR", "PLD", "PRU", "PEG", "PSA", "PHM", "PVH", "QRVO", "PWR", "QCOM", "DGX", "RL", "RJF", "RTX", "O", "REG", "REGN", "RF", "RSG",
+        "RMD", "ROK", "ROL", "ROP", "ROST", "RCL", "SPGI", "CRM", "SBAC", "SLB", "STX", "SEE", "SRE", "SHW", "SPG", "SWKS", "SJM", "SNA", "SO",
+        "LUV", "SWK", "SBUX", "STT", "STE", "SYK", "SYF", "SNPS", "SYY", "TMUS", "TROW", "TTWO", "TPR", "TGT", "TEL", "TDY", "TFX", "TER", "TSLA",
+        "TXN", "TXT", "TMO", "TJX", "TSCO", "TT", "TDG", "TRV", "TRMB", "TFC", "TYL", "TSN", "UDR", "ULTA", "USB", "UAA", "UA", "UNP", "UAL",
+        "UNH", "UPS", "URI", "UHS", "UNM", "VLO", "VTR", "VRSN", "VRSK", "VZ", "VRTX", "VFC", "VTRS", "V", "VMC", "WAB", "WMT", "WBA", "WBD",
+        "WM", "WAT", "WEC", "WFC", "WELL", "WST", "WDC", "WU", "WY", "WYNN", "XEL", "XYL", "YUM", "ZBRA", "ZBH", "ZION", "ZTS"
+    ]
+
 
 def evaluate_stock(ticker, spy_return, min_volume, min_market_cap, is_mag7=False):
     try:
@@ -197,7 +251,8 @@ def process_screener(task_id: str, criteria: FilterCriteria):
         
     except Exception as e:
         tasks_store[task_id]["status"] = "error"
-        tasks_store[task_id]["detail"] = str(e)
+        # 提供更詳細的錯誤資訊，包含是哪一行出問題
+        tasks_store[task_id]["detail"] = f"{str(e)} (Traceback: {traceback.format_exc().splitlines()[-2]})"
 
 @app.post("/api/screen/start")
 def start_screener(criteria: FilterCriteria, background_tasks: BackgroundTasks):
