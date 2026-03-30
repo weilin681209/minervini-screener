@@ -1,0 +1,1 @@
+# minervini-screener
