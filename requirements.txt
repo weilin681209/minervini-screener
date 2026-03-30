@@ -1,8 +1,11 @@
 fastapi
 uvicorn
-yfinance
+yahooquery
 pandas
 lxml
+html5lib
+beautifulsoup4
 requests
-requests-cache
 pydantic
+scipy
+numpy
