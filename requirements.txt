@@ -6,6 +6,4 @@ lxml
 requests
 pydantic
 beautifulsoup4
-html5lib
-curl_cffi
 yahooquery
