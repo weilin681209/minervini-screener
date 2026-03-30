@@ -9,18 +9,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const benchmarkReturn = document.getElementById('benchmarkReturn');
     const scanRange = document.getElementById('scanRange');
     
+    // Progress Bar Elements
     const progressContainer = document.getElementById('progressContainer');
     const progressBarFill = document.getElementById('progressBarFill');
     const progressText = document.getElementById('progressText');
     const progressPercent = document.getElementById('progressPercent');
     
+    // Modal Elements
     const chartModal = document.getElementById('chartModal');
     const closeModalBtn = document.getElementById('closeModalBtn');
     const modalTickerTitle = document.getElementById('modalTickerTitle');
     
-    let currentTaskId = null;
-    let taskInterval = null;
-
     closeModalBtn.addEventListener('click', () => {
         chartModal.classList.add('hidden');
         document.getElementById('tradingview_container').innerHTML = '';
@@ -29,20 +28,9 @@ document.addEventListener('DOMContentLoaded', () => {
     runBtn.addEventListener('click', () => performScan(runBtn, 'sp500'));
     runMag7Btn.addEventListener('click', () => performScan(runMag7Btn, 'mag7'));
 
-    // 當手機螢幕熄滅再打開時，自動喚醒輪詢
-    document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && currentTaskId && !taskInterval) {
-            console.log("喚醒背景輪詢...");
-            startPolling(currentTaskId, document.getElementById('runBtn')); // 預設用 runBtn
-        }
-    });
-
     async function performScan(btnEl, targetList) {
-        // 第一步：清理手機輸入法可能帶入的非數字字元 (逗號、空格等)
-        const volStr = minVolume.value.toString().replace(/[^0-9]/g, '');
-        const capStr = minMarketCap.value.toString().replace(/[^0-9]/g, '');
-        const volumeVal = parseInt(volStr);
-        const capVal = parseInt(capStr);
+        const volumeVal = parseInt(minVolume.value);
+        const capVal = parseInt(minMarketCap.value);
         
         if (isNaN(volumeVal) || isNaN(capVal)) {
             alert('請輸入有效的數字');
@@ -52,13 +40,12 @@ document.addEventListener('DOMContentLoaded', () => {
         btnEl.classList.add('loading');
         runBtn.disabled = true;
         runMag7Btn.disabled = true;
-        
         resultsGrid.innerHTML = '';
         stats.classList.add('hidden');
         progressContainer.classList.remove('hidden');
         progressBarFill.style.width = '0%';
         progressPercent.textContent = '0%';
-        progressText.textContent = `伺服器連線中...`;
+        progressText.textContent = `準備執行專業 RS 百分比排名掃描 (${targetList === 'mag7' ? '美股七巨頭' : 'S&P 500'})...`;
 
         try {
             const startResponse = await fetch('/api/screen/start', {
@@ -67,72 +54,45 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ min_volume: volumeVal, min_market_cap: capVal, target_list: targetList })
             });
 
-            if (!startResponse.ok) throw new Error('伺服器目前忙碌，請稍後再試。');
-
             const { task_id } = await startResponse.json();
-            currentTaskId = task_id;
-            startPolling(task_id, btnEl, targetList);
-
-        } catch (error) {
-            showError(`啟動失敗：${error.message}`, btnEl);
-        }
-    }
-
-    function startPolling(task_id, btnEl, targetList) {
-        if (taskInterval) clearInterval(taskInterval);
-        
-        taskInterval = setInterval(async () => {
-            try {
+            
+            const taskInterval = setInterval(async () => {
                 const statusRes = await fetch(`/api/screen/status/${task_id}`);
-                if (!statusRes.ok) throw new Error("通訊中斷");
-                
                 const data = await statusRes.json();
-                
-                if (data.status === "error") {
-                    throw new Error(data.message || data.detail || "處理機房異常");
-                }
                 
                 if (data.status === "running" || data.status === "completed") {
                     const percent = data.total > 0 ? Math.round((data.progress / data.total) * 100) : 0;
                     progressBarFill.style.width = `${percent}%`;
                     progressPercent.textContent = `${percent}%`;
-                    progressText.textContent = data.message || `正在掃描個股趨勢 (${data.progress}/${data.total})...`;
+                    progressText.textContent = data.message || `正在抓取全市場資料以進行強度排名...`;
                 }
                 
                 if (data.status === "completed") {
-                    stopPolling(btnEl);
-                    scanRange.textContent = targetList === 'mag7' ? '美股七巨頭' : 'S&P 500';
+                    clearInterval(taskInterval);
+                    setTimeout(() => progressContainer.classList.add('hidden'), 500);
+                    btnEl.classList.remove('loading');
+                    runBtn.disabled = false;
+                    runMag7Btn.disabled = false;
+                    scanRange.textContent = targetList === 'mag7' ? '美股七巨頭 (Mag 7)' : 'S&P 500';
                     scannedCount.textContent = data.total;
                     benchmarkReturn.textContent = data.benchmark;
                     stats.classList.remove('hidden');
                     renderResults(data.results);
                 }
-            } catch (err) {
-                // 手機不穩定時不立即自殺，先嘗試靜默重連一次
-                console.warn('Polling Warning:', err);
-            }
-        }, 3000); // 手機端拉長到 3 秒一次減少壓力
-    }
-
-    function stopPolling(btnEl) {
-        clearInterval(taskInterval);
-        taskInterval = null;
-        currentTaskId = null;
-        btnEl.classList.remove('loading');
-        runBtn.disabled = false;
-        runMag7Btn.disabled = false;
-        setTimeout(() => progressContainer.classList.add('hidden'), 1000);
-    }
-
-    function showError(msg, btnEl) {
-        stopPolling(btnEl);
-        resultsGrid.innerHTML = `<div class="error-state">⚠️ ${msg}</div>`;
-        progressContainer.classList.add('hidden');
+            }, 2000);
+        } catch (error) {
+            console.error('Error:', error);
+            resultsGrid.innerHTML = `<div class="empty-state">掃描中斷：伺服器解析錯誤。</div>`;
+            progressContainer.classList.add('hidden');
+            btnEl.classList.remove('loading');
+            runBtn.disabled = false;
+            runMag7Btn.disabled = false;
+        }
     }
 
     function renderResults(stocks) {
         if (!stocks || stocks.length === 0) {
-            resultsGrid.innerHTML = `<div class="empty-state">✅ 掃描完成。目前市場暫無符合所有嚴苛條件的標的。</div>`;
+            resultsGrid.innerHTML = `<div class="empty-state">目前沒有股票完全符合 8/8 門檻與 RS Rating > 70 的嚴苛標準。</div>`;
             return;
         }
 
@@ -144,10 +104,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const formattedVol = stock.volume.toLocaleString('en-US');
             const returnClass = stock.return_1y > 0 ? 'return-positive' : 'return-negative';
             const returnSign = stock.return_1y > 0 ? '+' : '';
-            const vcpBadgeHtml = stock.is_vcp ? '<div class="vcp-badge">🔥 VCP 潛力</div>' : '';
-            const scoreHtml = `<div class="score-badge ${stock.score === 8 ? 'score-perfect' : ''}">🎯 ${stock.score}/8 條件</div>`;
+            const vcpBadgeHtml = stock.is_vcp ? '<div class="vcp-badge">🔥 VCP</div>' : '';
+            const scoreHtml = `<div class="score-badge ${stock.score === 8 ? 'score-perfect' : ''}">🎯 ${stock.score}/8</div>`;
+            
+            // 🔴 專業級 RS 標籤：高分 (90+) 時加入特別樣式
+            const rsBadgeHtml = `<div class="rs-badge ${stock.rs_rating >= 90 ? 'rs-high' : ''}">⚡ RS: ${stock.rs_rating}</div>`;
 
-            card.style.cursor = 'pointer';
             card.addEventListener('click', () => openTradingViewChart(stock.ticker));
 
             card.innerHTML = `
@@ -155,14 +117,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="ticker-box">
                         <div class="ticker">${stock.ticker}</div>
                         ${scoreHtml}
+                        ${rsBadgeHtml}
                         ${vcpBadgeHtml}
                     </div>
                     <div class="price">$${stock.price}</div>
                 </div>
                 <div class="card-body">
-                    <div class="data-row"><span>日均量</span><span>${formattedVol}</span></div>
-                    <div class="data-row"><span>市值</span><span>$${stock.market_cap}</span></div>
-                    <div class="data-row"><span>近 1Y 報酬</span><span class="${returnClass}">${returnSign}${stock.return_1y}%</span></div>
+                    <div class="data-row"><span class="data-label">日均量</span><span class="data-value">${formattedVol}</span></div>
+                    <div class="data-row"><span class="data-label">RS 排名</span><span class="data-value ${stock.rs_rating >= 90 ? 'return-positive' : ''}">市場評分 ${stock.rs_rating}</span></div>
+                    <div class="data-row"><span class="data-label">1Y 報酬</span><span class="data-value ${returnClass}">${returnSign}${stock.return_1y}%</span></div>
                 </div>
             `;
             resultsGrid.appendChild(card);
@@ -171,7 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function openTradingViewChart(ticker) {
         chartModal.classList.remove('hidden');
-        modalTickerTitle.textContent = `${ticker} - 實時分析`;
+        modalTickerTitle.textContent = `${ticker} - 技術分析圖`;
         new TradingView.widget({
             "autosize": true,
             "symbol": ticker,
@@ -181,7 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
             "style": "1",
             "locale": "zh_TW",
             "container_id": "tradingview_container",
-            "studies": ["Volume@tv-basicstudies", "MASimple@tv-basicstudies"]
+            "studies": ["Volume@tv-basicstudies", "MASimple@tv-basicstudies", "RSI@tv-basicstudies", "MAExp@tv-basicstudies"]
         });
     }
 });
