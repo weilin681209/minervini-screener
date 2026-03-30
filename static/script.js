@@ -85,7 +85,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         const percent = data.total > 0 ? Math.round((data.progress / data.total) * 100) : 0;
                         progressBarFill.style.width = `${percent}%`;
                         progressPercent.textContent = `${percent}%`;
-                        progressText.textContent = `掃描中 (${data.progress}/${data.total})...`;
+                        // 顯示後端傳回的診斷訊息
+                        progressText.textContent = data.message || `掃描中 (${data.progress}/${data.total})...`;
                     }
                     
                     // 掃描大功告成
