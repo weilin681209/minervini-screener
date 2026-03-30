@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minervini Screener</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <!-- 引入高質感的 TradingView 圖表庫 -->
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+</head>
+
+<body>
+
+    <main class="glass-container glass-panel">
+        <header>
+            <h1>Mark Minervini <span class="highlight">Screener</span></h1>
+            <p>強勢成長股自動過濾引擎</p>
+        </header>
+
+        <section class="controls">
+            <div class="input-group">
+                <label for="minVolume">最小交易量 (股 / 日)</label>
+                <input type="number" id="minVolume" value="1000000" min="0" step="100000">
+            </div>
+            <div class="input-group">
+                <label for="minMarketCap">最小市值 (USD)</label>
+                <input type="number" id="minMarketCap" value="2000000000" min="0" step="100000000">
+            </div>
+            <button id="runBtn" class="primary-btn">
+                <span class="btn-text">開始精準掃描</span>
+                <span class="btn-loader"></span>
+            </button>
+            <button id="runMag7Btn" class="secondary-btn">
+                <span class="btn-text">✨ 美股七巨頭</span>
+                <span class="btn-loader"></span>
+            </button>
+        </section>
+
+        <!-- 即時進度展示區 -->
+        <section id="progressContainer" class="progress-section hidden">
+            <div class="progress-info">
+                <span id="progressText">準備掃描中...</span>
+                <span id="progressPercent">0%</span>
+            </div>
+            <div class="progress-bar-bg">
+                <div id="progressBarFill" class="progress-bar-fill"></div>
+            </div>
+        </section>
+
+        <section class="results-area">
+            <div id="stats" class="stats hidden">
+                <p>搜尋範圍: <span id="scanRange">S&P 500</span> ｜ 總計掃描: <span id="scannedCount">0</span> 檔股票 ｜ 大盤 1Y 基準報酬:
+                    <span id="benchmarkReturn">0</span>%</p>
+            </div>
+            <div id="resultsGrid" class="results-grid"></div>
+        </section>
+    </main>
+
+    <!-- 股票專屬線圖互動 Modal -->
+    <div id="chartModal" class="modal-overlay hidden">
+        <div class="modal-content glass-panel">
+            <div class="modal-header">
+                <h2 id="modalTickerTitle">股票線圖</h2>
+                <button id="closeModalBtn" class="close-btn">&times;</button>
+            </div>
+            <div id="tradingview_container" class="tradingview-container"></div>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+
+</html>
