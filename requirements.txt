@@ -4,6 +4,5 @@ yfinance
 pandas
 lxml
 requests
+requests-cache
 pydantic
-beautifulsoup4
-yahooquery
